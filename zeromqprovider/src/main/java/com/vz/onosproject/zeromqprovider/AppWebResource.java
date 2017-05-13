@@ -20,13 +20,27 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.vz.onosproject.BlobStore.Blob;
 import com.vz.onosproject.BlobStore.BlobStore;
+import com.vz.onosproject.DTO.DpnParameters;
+import com.vz.onosproject.DTO.FpcDTO;
+import com.vz.onosproject.DTO.Instructions;
+import com.vz.onosproject.DTO.Payload;
+import com.vz.onosproject.DTO.Input;
+import com.vz.onosproject.DTO.*;
 import com.vz.onosproject.ZMQAppComponent;
 import com.vz.onosproject.provider.zeromq.api.ZeromqSBController;
 import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
+import org.onlab.util.KryoNamespace;
+import org.onosproject.core.ApplicationId;
+import org.onosproject.core.CoreService;
+import org.onosproject.store.serializers.KryoNamespaces;
 import org.onosproject.net.DeviceId;
 import org.onosproject.net.flow.FlowRule;
 import org.onosproject.rest.AbstractWebResource;
+import org.onosproject.store.service.ConsistentMap;
+import org.onosproject.store.service.Serializer;
+import org.onosproject.store.service.StorageService;
+import org.onosproject.store.service.Versioned;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,16 +70,57 @@ public class AppWebResource extends AbstractWebResource {
 
     protected BlobStore store = get(BlobStore.class);
 
+    private ConsistentMap<DeviceId, Blob> blobSet;
+    private ConsistentMap<String, FpcDTO> fpcSet;
     private ZeromqSBController controller = get(ZeromqSBController.class);
+
+    protected StorageService storageService = get(StorageService.class);
+    protected CoreService coreService = get(CoreService.class);
 
     private final String INVALID_DEVICEID = "No such device available";
     private final String INVALID_FLOW = "Malformed flow payload";
+
+    public enum FpcMsgType {
+        SESSION_UPLINK,
+        DOWNLINK,
+        DELETE,
+        INVALID_TYPE;
+    }
 
     public static long getNumPostRecieved() {
         return numPostRecieved;
     }
 
     private static long numPostRecieved;
+
+    public AppWebResource() {
+        ApplicationId appId = coreService.getAppId("com.vz.onosproject.zeromqprovider");
+
+        KryoNamespace.Builder serializer = KryoNamespace.newBuilder()
+                .register(KryoNamespaces.API)
+                .register(FpcDTO.class)
+                .register(Payload.class)
+                .register(Input.class)
+                .register(Payload.class)
+                .register(Instructions.class)
+                .register(Context.class)
+                .register(Dl.class)
+                .register(Ul.class)
+                .register(Dpn.class)
+                .register(DpnParameters.class)
+                .register(DpnParameters_.class)
+                .register(DpnParameters__.class)
+                .register(MobilityTunnelParameters.class)
+                .register(MobilityTunnelParameters_.class);
+
+        fpcSet = storageService.<String, FpcDTO>consistentMapBuilder()
+                .withSerializer(Serializer.using(serializer.build()))
+                .withName("fpc-rule-set")
+                .withApplicationId(appId)
+                .withPurgeOnUninstall()
+                .build();
+
+    }
 
     public static void incrPostCount() {
         numPostRecieved++;
@@ -96,6 +151,30 @@ public class AppWebResource extends AbstractWebResource {
     }
 
     /**
+     * Check for instruction type
+     */
+
+    FpcMsgType checkAndReturnInstructionType(FpcDTO obj) {
+
+        switch(obj.getPayload().getInput().getContexts().get(0).getInstructions().getInstr3gppMob()) {
+            case "session uplink":
+                return FpcMsgType.SESSION_UPLINK;
+            case "downlink":
+                return FpcMsgType.DOWNLINK;
+            default:
+                return FpcMsgType.INVALID_TYPE;
+        }
+    }
+
+    boolean isDeleteMsg(String obj) {
+       if(obj.contains("targets")) {
+           return true;
+       }
+
+       return false;
+    }
+
+    /**
      * Installs flows to downstream ZMQ device
      * @param stream blob flowrule
      * @return 200 OK
@@ -106,16 +185,32 @@ public class AppWebResource extends AbstractWebResource {
 
     public Response persisFlow(InputStream stream) {
         log.info("#### Pushing a flow");
-        ObjectNode jsonTree = null;
+        ObjectNode jsonTree = null, jsonTree2 = null;
         List<String> devices = controller.getAvailableDevices();
         try {
             jsonTree = (ObjectNode) mapper().readTree(stream);
+            jsonTree2 = jsonTree;
+
+            /**
+             * New FPC Parser code
+             */
+
+            //UplinkFPCdto dto = codec(UplinkFPCdto.class).decode(jsonTree2, this);
+            //log.info("##### Text value 1 " + jsonTree.asText());
+            //log.info("##### Text value 2 " + jsonTree.toString());
+            //log.info("##### Text value 3 " + jsonTree.textValue());
+
+            FpcDTO dto = mapper().readValue(jsonTree.toString(), FpcDTO.class);
+            //log.info(" #### Data from codec :  ");
+            //log.info("Device Id => " + dto.getDeviceId());
+            //log.info("Payload => " + dto.getPayload());
+
             JsonNode devId = jsonTree.get("DeviceId");
             JsonNode payload = jsonTree.get("Payload");
             String sPayload = payload.toString();
 
-            log.info("Device Id" + devId.asText());
-            log.info("Payload Text value " + payload.textValue() + " toString " + payload.toString() +"Type " + payload.getNodeType().toString());
+            //log.info("Device Id" + devId.asText());
+            //log.info("Payload Text value " + payload.textValue() + " toString " + payload.toString() +"Type " + payload.getNodeType().toString());
 
             if (devId == null || devId.asText().isEmpty() ||
                     devices.contains(devId.asText()) == false) {
@@ -134,8 +229,57 @@ public class AppWebResource extends AbstractWebResource {
             incrPostCount();
             log.info("#### Total num of posts :  " + getNumPostRecieved());
 
+            /**
+             * FPC Stuff
+             */
+
+            // First check for delete as JSON itself
+            if(isDeleteMsg(sPayload)) {
+                log.info("### It is session delete");
+                String imsi = dto.getPayload().getInput().getTargets().get(0).getTarget();
+                Versioned<FpcDTO> dto2 = fpcSet.get(imsi);
+                if (dto2 != null) {
+                    FpcDTO ddto = dto2.value();
+                    log.info("Here is a matching ul & dl for incoming imsi");
+                    log.info("#######");
+                    log.info(ddto.toString());
+                } else {
+                    throw new IllegalArgumentException("No matching uplink");
+                }
+            }
+            else {
+                // If the type is Uplink, go-ahead & put a entry
+                switch (checkAndReturnInstructionType(dto)) {
+                    case SESSION_UPLINK: {
+                        log.info("### It is session uplink");
+                        String imsi = dto.getPayload().getInput().getContexts().get(0).getImsi();
+                        fpcSet.put(imsi, dto);
+                        log.info("##### Saved uplink data for IMSI => " + imsi);
+                        break;
+                    }
+                    case DOWNLINK: {
+                        log.info("### It is session downlink");
+                        String imsi = dto.getPayload().getInput().getContexts().get(0).getImsi();
+                        Versioned<FpcDTO> dto2 = fpcSet.get(imsi);
+                        if (dto2 != null) {
+                            FpcDTO ddto = dto2.value();
+                            ddto.getPayload().getInput().getContexts().get(0).
+                                    setDl(ddto.getPayload().getInput().getContexts().get(0).getDl());
+                        } else {
+                            throw new IllegalArgumentException("No matching uplink");
+                        }
+                        break;
+                    }
+                    default:
+                        throw new IllegalArgumentException("Invalid Message type");
+                }
+            }
             return Response.ok().build();
-        } catch (/*IO*/Exception e) {
+        }
+        catch(UnsupportedOperationException usex) {
+            log.info("##### Error : " + usex.getMessage());
+        }
+        catch (/*IO*/Exception e) {
             e.printStackTrace();
             log.info("###### ERROR " + e.getMessage());
         }

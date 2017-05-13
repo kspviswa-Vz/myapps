@@ -1,51 +1,51 @@
 {
    "DeviceId" : "zmq:dev1",
-   "Payload" :  "input: { 
-        op-id: test,
-        contexts: [
+   "Payload" :  { "input": {
+        "op-id": "test",
+        "contexts": [
             {
-                instructions: {
-                    instr-3gpp-mob: test
+                "instructions": {
+                    "instr-3gpp-mob": "session uplink"
                 },
-                context-id: test,
-                                dpn-group: site1-l3,
-                delegating-ip-prefixes: [
-                    test
+                "context-id": "test",
+                                "dpn-group": "site1-l3",
+                "delegating-ip-prefixes": [
+                    "test"
                 ],
-                ul: {
-                    tunnel-local-address: test,
-                    tunnel-remote-address: test,
-                    mobility-tunnel-parameters: {
-                        tunnel-type: ietf-dmm-threegpp:gtpv1,
-                        tunnel-identifier: test
+                "ul": {
+                    "tunnel-local-address": "test",
+                    "tunnel-remote-address": "test",
+                    "mobility-tunnel-parameters": {
+                        "tunnel-type": "ietf-dmm-threegpp:gtpv1",
+                        "tunnel-identifier": "test"
                     },
-                        dpn-parameters: {}
+                        "dpn-parameters": {}
                 },
-                                dl: {
-                    tunnel-local-address: test,
-                    tunnel-remote-address: test,
-                    mobility-tunnel-parameters: {
-                        tunnel-type: ietf-dmm-threegpp:gtpv1,
-                        tunnel-identifier: test
+                                "dl": {
+                    "tunnel-local-address": "test",
+                    "tunnel-remote-address": "test",
+                    "mobility-tunnel-parameters": {
+                        "tunnel-type": "ietf-dmm-threegpp:gtpv1",
+                        "tunnel-identifier": "test"
                     },
-                        dpn-parameters: {}
+                        "dpn-parameters": {}
                 },
-                dpns: [
+                "dpns": [
                     {
-                        dpn-id: dpn1,
-                        direction: uplink,
-                        dpn-parameters: {}
+                        "dpn-id": "dpn1",
+                        "direction": "uplink",
+                        "dpn-parameters": {}
                     }
                 ],
-                imsi: test,
-                ebi: test,
-                lbi: test
+                "imsi": "test",
+                "ebi": "test",
+                "lbi": "test"
             }
         ],
-        client-id: 1,
-        session-state: complete,
-        admin-state: enabled,
-        op-type: test,
-        op-ref-scope: test
-    }" 
+        "client-id": "1",
+        "session-state": "complete",
+        "admin-state": "enabled",
+        "op-type": "test",
+        "op-ref-scope": "test"
+    } }
 }
