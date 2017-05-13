@@ -20,6 +20,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.vz.onosproject.BlobStore.Blob;
 import com.vz.onosproject.BlobStore.BlobStore;
+import com.vz.onosproject.Builder.FpcBuilder;
 import com.vz.onosproject.DTO.DpnParameters;
 import com.vz.onosproject.DTO.FpcDTO;
 import com.vz.onosproject.DTO.Instructions;
@@ -255,6 +256,9 @@ public class AppWebResource extends AbstractWebResource {
                         String imsi = dto.getPayload().getInput().getContexts().get(0).getImsi();
                         fpcSet.put(imsi, dto);
                         log.info("##### Saved uplink data for IMSI => " + imsi);
+                        Context con = dto.getPayload().getInput().getContexts().get(0);
+                        String dpn = con.getDpns().get(0).getDpnId();
+
                         break;
                     }
                     case DOWNLINK: {
